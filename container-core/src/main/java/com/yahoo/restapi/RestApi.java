@@ -268,4 +268,9 @@ public class RestApi {
         public BadRequestException(String message, Throwable cause) { super(400, message, cause); }
     }
 
+    public static class InternalServerErrorException extends RestApiException {
+        public InternalServerErrorException(String message) { super(500, message); }
+        public InternalServerErrorException(String message, Throwable cause) { super(500, message, cause); }
+    }
+
 }
