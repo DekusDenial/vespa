@@ -105,6 +105,7 @@ public class RestApi {
 
         interface PathParameters {
             Optional<String> getString(String name);
+            String getOrThrow(String name);
         }
     }
 
@@ -121,6 +122,11 @@ public class RestApi {
         @Override public HttpRequest request() { return request; }
         @Override public PathParameters pathParameters() { return this; }
         @Override public Optional<String> getString(String name) { return Optional.ofNullable(pathMatcher.get(name)); }
+        @Override public String getOrThrow(String name) {
+            return getString(name)
+                    .orElseThrow(() -> new BadRequestException("Path parameter '" + name + "' is missing"));
+        }
+
     }
 
     private static class ExceptionMapperHolder<EXCEPTION extends RuntimeException> {
@@ -255,6 +261,11 @@ public class RestApi {
         public MethodNotAllowedException(HttpRequest request) {
             super(405, "Method '" + request.getMethod().name() + "' is not allowed");
         }
+    }
+
+    public static class BadRequestException extends RestApiException {
+        public BadRequestException(String message) { super(400, message); }
+        public BadRequestException(String message, Throwable cause) { super(400, message, cause); }
     }
 
 }
