@@ -1,6 +1,7 @@
 // Copyright Verizon Media. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.restapi;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yahoo.container.jdisc.HttpRequest;
 import com.yahoo.container.jdisc.HttpResponse;
@@ -113,6 +114,10 @@ public class RestApi {
         if (!responseMappers.containsKey(Slime.class)) {
             ResponseMapper<Slime> mapper = (entity, context) -> new SlimeJsonResponse(entity);
             responseMappers.put(Slime.class, mapper);
+        }
+        if (!responseMappers.containsKey(JsonNode.class)) {
+            ResponseMapper<JsonNode> mapper = (entity, context) -> new JacksonJsonResponse<>(200, entity, true);
+            responseMappers.put(JsonNode.class, mapper);
         }
         if (!responseMappers.containsKey(JacksonResponseEntity.class)) {
             ResponseMapper<JacksonResponseEntity> mapper = (entity, context) -> new JacksonJsonResponse<>(200, entity, true);
