@@ -10,7 +10,6 @@ import com.yahoo.slime.Slime;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,8 +23,8 @@ public class RestApi {
 
     private final Route defaultRoute;
     private final List<Route> routes;
-    private final Map<Class<? extends RuntimeException>, ExceptionMapper<?>> exceptionMappers;
-    private final Map<Class<?>, ResponseMapper<?>> responseMappers;
+    private final List<ExceptionMapperHolder<?>> exceptionMappers;
+    private final List<ResponseMapperHolder<?>> responseMappers;
 
     private RestApi(Builder builder) {
         this.defaultRoute = builder.defaultRoute != null ? builder.defaultRoute : createDefaultRoute();
@@ -46,13 +45,15 @@ public class RestApi {
         try {
             entity = resolvedHandler.handleRequest(context);
         } catch (RuntimeException e) {
-            ExceptionMapper<RuntimeException> mapper = resolveExceptionMapper(e);
-            if (mapper == null) throw e;
+            ExceptionMapperHolder<?> mapper = exceptionMappers.stream()
+                    .filter(holder -> holder.matches(e))
+                    .findFirst().orElseThrow(() -> e);
             return mapper.toResponse(e, context);
         }
         if (entity == null) throw new NullPointerException("Handler must return non-null value");
-        ResponseMapper<Object> mapper = resolveResponseMapper(entity);
-        if (mapper == null) throw new IllegalStateException("No mapper configured for " + entity.getClass());
+        ResponseMapperHolder<?> mapper = responseMappers.stream()
+                .filter(holder -> holder.matches(entity))
+                .findFirst().orElseThrow(() -> new IllegalStateException("No mapper configured for " + entity.getClass()));
         return mapper.toHttpResponse(entity, context);
     }
 
@@ -66,63 +67,26 @@ public class RestApi {
         return defaultRoute;
     }
 
-    @SuppressWarnings("unchecked")
-    private ExceptionMapper<RuntimeException> resolveExceptionMapper(RuntimeException e) {
-        for (var entry : exceptionMappers.entrySet()) {
-            if (entry.getKey().isAssignableFrom(e.getClass())) {
-                return (ExceptionMapper<RuntimeException>) entry.getValue();
-            }
-        }
-        return null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private ResponseMapper<Object> resolveResponseMapper(Object entity) {
-        for (var entry : responseMappers.entrySet()) {
-            if (entry.getKey().isAssignableFrom(entity.getClass())) {
-                return (ResponseMapper<Object>) entry.getValue();
-            }
-        }
-        return null;
-    }
-
     private static Route createDefaultRoute() {
         return new Route.Builder("{*}")
                 .defaultHandler(context -> { throw new NotFoundException(); })
                 .build();
     }
 
-    private static Map<Class<? extends RuntimeException>, ExceptionMapper<?>> combineWithDefaultExceptionMappers(
-            Map<Class<? extends RuntimeException>, ExceptionMapper<?>> configuredExceptionMappers) {
-        Map<Class<? extends RuntimeException>, ExceptionMapper<?>> exceptionMappers = new LinkedHashMap<>();
-        configuredExceptionMappers.forEach(exceptionMappers::put);
-        if (!exceptionMappers.containsKey(RestApiException.class)) {
-            ExceptionMapper<RestApiException> mapper = (exception, context) -> exception.response;
-            exceptionMappers.put(RestApiException.class, mapper);
-        }
+    private static List<ExceptionMapperHolder<?>> combineWithDefaultExceptionMappers(
+            List<ExceptionMapperHolder<?>> configuredExceptionMappers) {
+        List<ExceptionMapperHolder<?>> exceptionMappers = new ArrayList<>(configuredExceptionMappers);
+        exceptionMappers.add(new ExceptionMapperHolder<>(RestApiException.class, (exception, context) -> exception.response));
         return exceptionMappers;
     }
 
-    private static Map<Class<?>, ResponseMapper<?>> combineWithDefaultResponseMappers(
-            Map<Class<?>, ResponseMapper<?>> configuredResponseMappers) {
-        Map<Class<?>, ResponseMapper<?>> responseMappers = new LinkedHashMap<>();
-        configuredResponseMappers.forEach(responseMappers::put);
-        if (!responseMappers.containsKey(HttpResponse.class)) {
-            ResponseMapper<HttpResponse> mapper = (entity, context) -> entity;
-            responseMappers.put(HttpResponse.class, mapper);
-        }
-        if (!responseMappers.containsKey(Slime.class)) {
-            ResponseMapper<Slime> mapper = (entity, context) -> new SlimeJsonResponse(entity);
-            responseMappers.put(Slime.class, mapper);
-        }
-        if (!responseMappers.containsKey(JsonNode.class)) {
-            ResponseMapper<JsonNode> mapper = (entity, context) -> new JacksonJsonResponse<>(200, entity, true);
-            responseMappers.put(JsonNode.class, mapper);
-        }
-        if (!responseMappers.containsKey(JacksonResponseEntity.class)) {
-            ResponseMapper<JacksonResponseEntity> mapper = (entity, context) -> new JacksonJsonResponse<>(200, entity, true);
-            responseMappers.put(JacksonResponseEntity.class, mapper);
-        }
+    private static List<ResponseMapperHolder<?>> combineWithDefaultResponseMappers(
+            List<ResponseMapperHolder<?>> configuredResponseMappers) {
+        List<ResponseMapperHolder<?>> responseMappers = new ArrayList<>(configuredResponseMappers);
+        responseMappers.add(new ResponseMapperHolder<>(HttpResponse.class, (entity, context) -> entity));
+        responseMappers.add(new ResponseMapperHolder<>(Slime.class, (entity, context) -> new SlimeJsonResponse(entity)));
+        responseMappers.add(new ResponseMapperHolder<>(JsonNode.class, (entity, context) -> new JacksonJsonResponse<>(200, entity, true)));
+        responseMappers.add(new ResponseMapperHolder<>(JacksonResponseEntity.class, (entity, context) -> new JacksonJsonResponse<>(200, entity, true)));
         return responseMappers;
     }
 
@@ -146,10 +110,10 @@ public class RestApi {
 
     private static class RequestContextImpl implements RequestContext, RequestContext.PathParameters {
 
-        private final HttpRequest request;
-        private final Path pathMatcher;
+        final HttpRequest request;
+        final Path pathMatcher;
 
-        private RequestContextImpl(HttpRequest request, Path pathMatcher) {
+        RequestContextImpl(HttpRequest request, Path pathMatcher) {
             this.request = request;
             this.pathMatcher = pathMatcher;
         }
@@ -159,11 +123,39 @@ public class RestApi {
         @Override public Optional<String> getString(String name) { return Optional.ofNullable(pathMatcher.get(name)); }
     }
 
+    private static class ExceptionMapperHolder<EXCEPTION extends RuntimeException> {
+
+        final Class<EXCEPTION> type;
+        final ExceptionMapper<EXCEPTION> mapper;
+
+        ExceptionMapperHolder(Class<EXCEPTION> type, ExceptionMapper<EXCEPTION> mapper) {
+            this.type = type;
+            this.mapper = mapper;
+        }
+
+        boolean matches(RuntimeException e) { return type.isAssignableFrom(e.getClass()); }
+        HttpResponse toResponse(RuntimeException e, RequestContext context) { return mapper.toResponse(type.cast(e), context); }
+    }
+
+    private static class ResponseMapperHolder<ENTITY> {
+
+        final Class<ENTITY> type;
+        final ResponseMapper<ENTITY> mapper;
+
+        ResponseMapperHolder(Class<ENTITY> type, ResponseMapper<ENTITY> mapper) {
+            this.type = type;
+            this.mapper = mapper;
+        }
+
+        boolean matches(Object entity) { return type.isAssignableFrom(entity.getClass()); }
+        HttpResponse toHttpResponse(Object entity, RequestContext context) { return mapper.toHttpResponse(type.cast(entity), context); }
+    }
+
     public static class Builder {
 
         private final List<Route> routes = new ArrayList<>();
-        private final Map<Class<? extends RuntimeException>, ExceptionMapper<?>> exceptionMappers = new LinkedHashMap<>();
-        private final Map<Class<?>, ResponseMapper<?>> responseMappers = new LinkedHashMap<>();
+        private final List<ExceptionMapperHolder<?>> exceptionMappers = new ArrayList<>();
+        private final List<ResponseMapperHolder<?>> responseMappers = new ArrayList<>();
         private Route defaultRoute;
 
         public Builder setDefaultRoute(Route route) { this.defaultRoute = route; return this; }
@@ -171,11 +163,11 @@ public class RestApi {
         public Builder addRoute(Route route) { routes.add(route); return this; }
 
         public <EXCEPTION extends RuntimeException> Builder addExceptionMapper(Class<EXCEPTION> type, ExceptionMapper<EXCEPTION> mapper) {
-            exceptionMappers.put(type, mapper); return this;
+            exceptionMappers.add(new ExceptionMapperHolder<>(type, mapper)); return this;
         }
 
         public <ENTITY> Builder addResponseMapper(Class<ENTITY> type, ResponseMapper<ENTITY> mapper) {
-            responseMappers.put(type, mapper); return this;
+            responseMappers.add(new ResponseMapperHolder<>(type, mapper)); return this;
         }
 
         public RestApi build() { return new RestApi(this); }
