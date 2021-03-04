@@ -210,6 +210,7 @@ public class RestApi {
             public Builder post(MethodHandler<?> handler) { return addHandler(Method.POST, handler); }
             public Builder put(MethodHandler<?> handler) { return addHandler(Method.PUT, handler); }
             public Builder delete(MethodHandler<?> handler) { return addHandler(Method.DELETE, handler); }
+            public Builder patch(MethodHandler<?> handler) { return addHandler(Method.PATCH, handler); }
             public Builder defaultHandler(MethodHandler<?> handler) { defaultHandler = handler; return this; }
 
             private Builder addHandler(Method method, MethodHandler<?> handler) {
