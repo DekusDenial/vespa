@@ -23,7 +23,7 @@ public class RestApi {
 
     private final Route defaultRoute;
     private final List<Route> routes;
-    private final Map<Class<? extends Exception>, ExceptionMapper<?>> exceptionMappers;
+    private final Map<Class<? extends RuntimeException>, ExceptionMapper<?>> exceptionMappers;
     private final Map<Class<?>, ResponseMapper<?>> responseMappers;
 
     private RestApi(Builder builder) {
@@ -91,9 +91,9 @@ public class RestApi {
                 .build();
     }
 
-    private static Map<Class<? extends Exception>, ExceptionMapper<?>> combineWithDefaultExceptionMappers(
-            Map<Class<? extends Exception>, ExceptionMapper<?>> configuredExceptionMappers) {
-        Map<Class<? extends Exception>, ExceptionMapper<?>> exceptionMappers = new LinkedHashMap<>();
+    private static Map<Class<? extends RuntimeException>, ExceptionMapper<?>> combineWithDefaultExceptionMappers(
+            Map<Class<? extends RuntimeException>, ExceptionMapper<?>> configuredExceptionMappers) {
+        Map<Class<? extends RuntimeException>, ExceptionMapper<?>> exceptionMappers = new LinkedHashMap<>();
         configuredExceptionMappers.forEach(exceptionMappers::put);
         if (!exceptionMappers.containsKey(RestApiException.class)) {
             ExceptionMapper<RestApiException> mapper = (exception, context) -> exception.response;
@@ -157,7 +157,7 @@ public class RestApi {
     public static class Builder {
 
         private final List<Route> routes = new ArrayList<>();
-        private final Map<Class<? extends Exception>, ExceptionMapper<?>> exceptionMappers = new LinkedHashMap<>();
+        private final Map<Class<? extends RuntimeException>, ExceptionMapper<?>> exceptionMappers = new LinkedHashMap<>();
         private final Map<Class<?>, ResponseMapper<?>> responseMappers = new LinkedHashMap<>();
         private Route defaultRoute;
 
