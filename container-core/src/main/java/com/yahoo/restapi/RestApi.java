@@ -2,6 +2,7 @@
 package com.yahoo.restapi;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yahoo.container.jdisc.HttpRequest;
 import com.yahoo.container.jdisc.HttpResponse;
@@ -25,12 +26,15 @@ public class RestApi {
     private final List<Route> routes;
     private final List<ExceptionMapperHolder<?>> exceptionMappers;
     private final List<ResponseMapperHolder<?>> responseMappers;
+    private final ObjectMapper jacksonJsonMapper;
 
     private RestApi(Builder builder) {
+        ObjectMapper jacksonJsonMapper = builder.jacksonJsonMapper != null ? builder.jacksonJsonMapper : JacksonJsonMapper.instance;
         this.defaultRoute = builder.defaultRoute != null ? builder.defaultRoute : createDefaultRoute();
         this.routes = List.copyOf(builder.routes);
-        this.exceptionMappers = combineWithDefaultExceptionMappers(builder.exceptionMappers);
-        this.responseMappers = combineWithDefaultResponseMappers(builder.responseMappers);
+        this.exceptionMappers = combineWithDefaultExceptionMappers(builder.exceptionMappers, jacksonJsonMapper);
+        this.responseMappers = combineWithDefaultResponseMappers(builder.responseMappers, jacksonJsonMapper);
+        this.jacksonJsonMapper = jacksonJsonMapper;
     }
 
     public HttpResponse handleRequest(HttpRequest request) {
@@ -57,6 +61,8 @@ public class RestApi {
         return mapper.toHttpResponse(entity, context);
     }
 
+    public ObjectMapper jacksonJsonMapper() { return jacksonJsonMapper; }
+
     private Route resolveRoute(Path pathMatcher) {
         Route matchingRoute = routes.stream()
                 .filter(route -> pathMatcher.matches(route.pathPattern))
@@ -74,19 +80,19 @@ public class RestApi {
     }
 
     private static List<ExceptionMapperHolder<?>> combineWithDefaultExceptionMappers(
-            List<ExceptionMapperHolder<?>> configuredExceptionMappers) {
+            List<ExceptionMapperHolder<?>> configuredExceptionMappers, ObjectMapper jacksonJsonMapper) {
         List<ExceptionMapperHolder<?>> exceptionMappers = new ArrayList<>(configuredExceptionMappers);
-        exceptionMappers.add(new ExceptionMapperHolder<>(RestApiException.class, (exception, context) -> exception.response));
+        exceptionMappers.add(new ExceptionMapperHolder<>(RestApiException.class, (exception, context) -> exception.createResponse(jacksonJsonMapper)));
         return exceptionMappers;
     }
 
     private static List<ResponseMapperHolder<?>> combineWithDefaultResponseMappers(
-            List<ResponseMapperHolder<?>> configuredResponseMappers) {
+            List<ResponseMapperHolder<?>> configuredResponseMappers, ObjectMapper jacksonJsonMapper) {
         List<ResponseMapperHolder<?>> responseMappers = new ArrayList<>(configuredResponseMappers);
         responseMappers.add(new ResponseMapperHolder<>(HttpResponse.class, (entity, context) -> entity));
         responseMappers.add(new ResponseMapperHolder<>(Slime.class, (entity, context) -> new SlimeJsonResponse(entity)));
-        responseMappers.add(new ResponseMapperHolder<>(JsonNode.class, (entity, context) -> new JacksonJsonResponse<>(200, entity, true)));
-        responseMappers.add(new ResponseMapperHolder<>(JacksonResponseEntity.class, (entity, context) -> new JacksonJsonResponse<>(200, entity, true)));
+        responseMappers.add(new ResponseMapperHolder<>(JsonNode.class, (entity, context) -> new JacksonJsonResponse<>(200, entity, jacksonJsonMapper, true)));
+        responseMappers.add(new ResponseMapperHolder<>(JacksonResponseEntity.class, (entity, context) -> new JacksonJsonResponse<>(200, entity, jacksonJsonMapper, true)));
         return responseMappers;
     }
 
@@ -184,6 +190,9 @@ public class RestApi {
         private final List<ExceptionMapperHolder<?>> exceptionMappers = new ArrayList<>();
         private final List<ResponseMapperHolder<?>> responseMappers = new ArrayList<>();
         private Route defaultRoute;
+        private ObjectMapper jacksonJsonMapper;
+
+        public Builder setObjectMapper(ObjectMapper mapper) { this.jacksonJsonMapper = mapper; return this; }
 
         public Builder setDefaultRoute(Route route) { this.defaultRoute = route; return this; }
 
@@ -242,33 +251,39 @@ public class RestApi {
     }
 
     public static class RestApiException extends RuntimeException {
+        private final int statusCode;
         private final HttpResponse response;
 
         public RestApiException(int responseCode, String message) {
             super(message);
-            this.response = createDefaultResponse(responseCode, message);
+            this.response = null;
+            this.statusCode = responseCode;
         }
 
         public RestApiException(HttpResponse response, String message) {
             super(message);
             this.response = response;
+            this.statusCode = response.getStatus();
         }
 
         public RestApiException(int responseCode, String message, Throwable cause) {
             super(message, cause);
-            this.response = createDefaultResponse(responseCode, message);
+            this.response = null;
+            this.statusCode = responseCode;
         }
 
         public RestApiException(HttpResponse response, String message, Throwable cause) {
             super(message, cause);
             this.response = response;
+            this.statusCode = response.getStatus();
         }
 
-        private static HttpResponse createDefaultResponse(int code, String message) {
-            ObjectNode json = JacksonJsonMapper.instance.createObjectNode()
-                    .put("code", code)
-                    .put("message", message);
-            return new JacksonJsonResponse<>(code, json, true);
+        private HttpResponse createResponse(ObjectMapper jacksonJsonMapper) {
+            if (response != null) return response;
+            ObjectNode json = jacksonJsonMapper.createObjectNode()
+                    .put("code", statusCode)
+                    .put("message", getMessage());
+            return new JacksonJsonResponse<>(statusCode, json, jacksonJsonMapper, true);
         }
     }
 
