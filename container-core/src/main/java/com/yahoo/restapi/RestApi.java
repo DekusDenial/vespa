@@ -13,6 +13,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalDouble;
+import java.util.OptionalLong;
 
 /**
  * Rest API routing and response serialization
@@ -110,15 +112,23 @@ public class RestApi {
         PathParameters pathParameters();
         QueryParameters queryParameters();
 
-        interface PathParameters {
+        interface Parameters {
             Optional<String> getString(String name);
-            String getOrThrow(String name);
+            String getStringOrThrow(String name);
+            default Optional<Boolean> getBoolean(String name) { return getString(name).map(Boolean::valueOf);}
+            default boolean getBooleanOrThrow(String name) { return Boolean.parseBoolean(getStringOrThrow(name)); }
+            default OptionalLong getLong(String name) {
+                return getString(name).map(Long::parseLong).map(OptionalLong::of).orElseGet(OptionalLong::empty);
+            }
+            default long getLongOrThrow(String name) { return Long.parseLong(getStringOrThrow(name)); }
+            default OptionalDouble getDouble(String name) {
+                return getString(name).map(Double::parseDouble).map(OptionalDouble::of).orElseGet(OptionalDouble::empty);
+            }
+            default double getDoubleOrThrow(String name) { return Double.parseDouble(getStringOrThrow(name)); }
         }
 
-        interface QueryParameters {
-            Optional<String> getString(String name);
-            String getOrThrow(String name);
-        }
+        interface PathParameters extends Parameters {}
+        interface QueryParameters extends Parameters {}
     }
 
     private static class RequestContextImpl implements RequestContext {
@@ -141,7 +151,7 @@ public class RestApi {
 
         private class PathParametersImpl implements RequestContext.PathParameters {
             @Override public Optional<String> getString(String name) { return Optional.ofNullable(pathMatcher.get(name)); }
-            @Override public String getOrThrow(String name) {
+            @Override public String getStringOrThrow(String name) {
                 return getString(name)
                         .orElseThrow(() -> new BadRequestException("Path parameter '" + name + "' is missing"));
             }
@@ -149,7 +159,7 @@ public class RestApi {
 
         private class QueryParametersImpl implements RequestContext.QueryParameters {
             @Override public Optional<String> getString(String name) { return Optional.ofNullable(request.getProperty(name)); }
-            @Override public String getOrThrow(String name) {
+            @Override public String getStringOrThrow(String name) {
                 return getString(name)
                         .orElseThrow(() -> new BadRequestException("Query parameter '" + name + "' is missing"));
             }
