@@ -3,7 +3,6 @@ package com.yahoo.restapi;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.yahoo.container.jdisc.HttpRequest;
 import com.yahoo.container.jdisc.HttpResponse;
 import com.yahoo.jdisc.http.HttpRequest.Method;
@@ -32,7 +31,7 @@ public class RestApi {
         ObjectMapper jacksonJsonMapper = builder.jacksonJsonMapper != null ? builder.jacksonJsonMapper : JacksonJsonMapper.instance;
         this.defaultRoute = builder.defaultRoute != null ? builder.defaultRoute : createDefaultRoute();
         this.routes = List.copyOf(builder.routes);
-        this.exceptionMappers = combineWithDefaultExceptionMappers(builder.exceptionMappers, jacksonJsonMapper);
+        this.exceptionMappers = combineWithDefaultExceptionMappers(builder.exceptionMappers);
         this.responseMappers = combineWithDefaultResponseMappers(builder.responseMappers, jacksonJsonMapper);
         this.jacksonJsonMapper = jacksonJsonMapper;
     }
@@ -80,9 +79,9 @@ public class RestApi {
     }
 
     private static List<ExceptionMapperHolder<?>> combineWithDefaultExceptionMappers(
-            List<ExceptionMapperHolder<?>> configuredExceptionMappers, ObjectMapper jacksonJsonMapper) {
+            List<ExceptionMapperHolder<?>> configuredExceptionMappers) {
         List<ExceptionMapperHolder<?>> exceptionMappers = new ArrayList<>(configuredExceptionMappers);
-        exceptionMappers.add(new ExceptionMapperHolder<>(RestApiException.class, (exception, context) -> exception.createResponse(jacksonJsonMapper)));
+        exceptionMappers.add(new ExceptionMapperHolder<>(RestApiException.class, (exception, context) -> exception.createResponse()));
         return exceptionMappers;
     }
 
@@ -252,11 +251,13 @@ public class RestApi {
 
     public static class RestApiException extends RuntimeException {
         private final int statusCode;
+        private final String errorType;
         private final HttpResponse response;
 
-        public RestApiException(int responseCode, String message) {
+        public RestApiException(int responseCode, String errorType, String message) {
             super(message);
             this.response = null;
+            this.errorType = errorType;
             this.statusCode = responseCode;
         }
 
@@ -266,9 +267,10 @@ public class RestApi {
             this.statusCode = response.getStatus();
         }
 
-        public RestApiException(int responseCode, String message, Throwable cause) {
+        public RestApiException(int responseCode, String errorType, String message, Throwable cause) {
             super(message, cause);
             this.response = null;
+            this.errorType = errorType;
             this.statusCode = responseCode;
         }
 
@@ -278,35 +280,45 @@ public class RestApi {
             this.statusCode = response.getStatus();
         }
 
-        private HttpResponse createResponse(ObjectMapper jacksonJsonMapper) {
+        private HttpResponse createResponse() {
             if (response != null) return response;
-            ObjectNode json = jacksonJsonMapper.createObjectNode()
-                    .put("code", statusCode)
-                    .put("message", getMessage());
-            return new JacksonJsonResponse<>(statusCode, json, jacksonJsonMapper, true);
+            return new ErrorResponse(statusCode, errorType, getMessage());
         }
     }
 
     public static class NotFoundException extends RestApiException {
-        public NotFoundException() { super(404, "Not Found"); }
+        public NotFoundException() { super(ErrorResponse.notFoundError("Not Found"), "Not Found"); }
     }
 
     public static class MethodNotAllowedException extends RestApiException {
-        public MethodNotAllowedException() { super(405, "Method Not Allowed"); }
+        public MethodNotAllowedException() {
+            super(ErrorResponse.methodNotAllowed("Method not allowed"), "Method not allowed");
+        }
 
         public MethodNotAllowedException(HttpRequest request) {
-            super(405, "Method '" + request.getMethod().name() + "' is not allowed");
+            super(ErrorResponse.methodNotAllowed("Method '" + request.getMethod().name() + "' is not allowed"),
+                    "Method not allowed");
         }
     }
 
     public static class BadRequestException extends RestApiException {
-        public BadRequestException(String message) { super(400, message); }
-        public BadRequestException(String message, Throwable cause) { super(400, message, cause); }
+        public BadRequestException(String message) {
+            super(ErrorResponse.badRequest(message), message);
+        }
+
+        public BadRequestException(String message, Throwable cause) {
+            super(ErrorResponse.badRequest(message), message, cause);
+        }
     }
 
     public static class InternalServerErrorException extends RestApiException {
-        public InternalServerErrorException(String message) { super(500, message); }
-        public InternalServerErrorException(String message, Throwable cause) { super(500, message, cause); }
+        public InternalServerErrorException(String message) {
+            super(ErrorResponse.internalServerError(message), message);
+        }
+
+        public InternalServerErrorException(String message, Throwable cause) {
+            super(ErrorResponse.internalServerError(message), message, cause);
+        }
     }
 
 }
