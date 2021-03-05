@@ -264,6 +264,7 @@ public class RestApi {
         public RestApiException(HttpResponse response, String message) {
             super(message);
             this.response = response;
+            this.errorType = null;
             this.statusCode = response.getStatus();
         }
 
@@ -277,6 +278,7 @@ public class RestApi {
         public RestApiException(HttpResponse response, String message, Throwable cause) {
             super(message, cause);
             this.response = response;
+            this.errorType = null;
             this.statusCode = response.getStatus();
         }
 
