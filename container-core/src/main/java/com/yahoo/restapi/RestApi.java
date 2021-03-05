@@ -7,7 +7,11 @@ import com.yahoo.container.jdisc.HttpRequest;
 import com.yahoo.container.jdisc.HttpResponse;
 import com.yahoo.jdisc.http.HttpRequest.Method;
 import com.yahoo.slime.Slime;
+import com.yahoo.slime.SlimeUtils;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -45,7 +49,7 @@ public class RestApi {
         if (resolvedHandler == null) {
             resolvedHandler = resolvedRoute.defaultHandler;
         }
-        RequestContext context = new RequestContextImpl(request, pathMatcher);
+        RequestContext context = new RequestContextImpl(request, pathMatcher, jacksonJsonMapper);
         Object entity;
         try {
             entity = resolvedHandler.handleRequest(context);
@@ -107,10 +111,15 @@ public class RestApi {
     /** Marker interface required for automatic serialization of Jackson response entities */
     public interface JacksonResponseEntity {}
 
+    /** Marker interface required for automatic serialization of Jackson request entities */
+    public interface JacksonRequestEntity {}
+
     public interface RequestContext {
         HttpRequest request();
         PathParameters pathParameters();
         QueryParameters queryParameters();
+        Headers headers();
+        Optional<RequestContent> requestContent();
 
         interface Parameters {
             Optional<String> getString(String name);
@@ -129,25 +138,43 @@ public class RestApi {
 
         interface PathParameters extends Parameters {}
         interface QueryParameters extends Parameters {}
+        interface Headers extends Parameters {}
+
+        interface RequestContent {
+            String contentType();
+            InputStream inputStream();
+            ObjectMapper jacksonJsonMapper();
+            default byte[] consumeByteArray() throws IOException { return inputStream().readAllBytes(); }
+            default String consumeString() throws IOException { return new String(consumeByteArray(), StandardCharsets.UTF_8); }
+            default JsonNode consumeJsonNode() throws IOException { return jacksonJsonMapper().readTree(inputStream()); }
+            default Slime consumeSlime() throws IOException { return SlimeUtils.jsonToSlime(consumeByteArray()); }
+            default <T extends JacksonRequestEntity> T consumeJacksonEntity(Class<T> type) throws IOException {
+                return jacksonJsonMapper().readValue(inputStream(), type);
+            }
+        }
     }
 
     private static class RequestContextImpl implements RequestContext {
-
         final HttpRequest request;
         final Path pathMatcher;
-        final PathParameters pathParameters;
-        final QueryParameters queryParameters;
+        final ObjectMapper jacksonJsonMapper;
+        final PathParameters pathParameters = new PathParametersImpl();
+        final QueryParameters queryParameters = new QueryParametersImpl();
+        final Headers headers = new HeadersImpl();
+        final RequestContent requestContent;
 
-        RequestContextImpl(HttpRequest request, Path pathMatcher) {
+        RequestContextImpl(HttpRequest request, Path pathMatcher, ObjectMapper jacksonJsonMapper) {
             this.request = request;
             this.pathMatcher = pathMatcher;
-            this.pathParameters = new PathParametersImpl();
-            this.queryParameters = new QueryParametersImpl();
+            this.jacksonJsonMapper = jacksonJsonMapper;
+            this.requestContent = request.getData() != null ? new RequestContentImpl() : null;
         }
 
         @Override public HttpRequest request() { return request; }
         @Override public PathParameters pathParameters() { return pathParameters; }
         @Override public QueryParameters queryParameters() { return queryParameters; }
+        @Override public Headers headers() { return headers; }
+        @Override public Optional<RequestContent> requestContent() { return Optional.ofNullable(requestContent); }
 
         private class PathParametersImpl implements RequestContext.PathParameters {
             @Override public Optional<String> getString(String name) { return Optional.ofNullable(pathMatcher.get(name)); }
@@ -164,10 +191,23 @@ public class RestApi {
                         .orElseThrow(() -> new BadRequestException("Query parameter '" + name + "' is missing"));
             }
         }
+
+        private class HeadersImpl implements RequestContext.Headers {
+            @Override public Optional<String> getString(String name) { return Optional.ofNullable(request.getHeader(name)); }
+            @Override public String getStringOrThrow(String name) {
+                return getString(name)
+                        .orElseThrow(() -> new BadRequestException("Header '" + name + "' missing"));
+            }
+        }
+
+        private class RequestContentImpl implements RequestContext.RequestContent {
+            @Override public String contentType() { return request.getHeader("Content-Type"); }
+            @Override public InputStream inputStream() { return request.getData(); }
+            @Override public ObjectMapper jacksonJsonMapper() { return jacksonJsonMapper; }
+        }
     }
 
     private static class ExceptionMapperHolder<EXCEPTION extends RuntimeException> {
-
         final Class<EXCEPTION> type;
         final ExceptionMapper<EXCEPTION> mapper;
 
@@ -181,7 +221,6 @@ public class RestApi {
     }
 
     private static class ResponseMapperHolder<ENTITY> {
-
         final Class<ENTITY> type;
         final ResponseMapper<ENTITY> mapper;
 
@@ -195,7 +234,6 @@ public class RestApi {
     }
 
     public static class Builder {
-
         private final List<Route> routes = new ArrayList<>();
         private final List<ExceptionMapperHolder<?>> exceptionMappers = new ArrayList<>();
         private final List<ResponseMapperHolder<?>> responseMappers = new ArrayList<>();
@@ -217,7 +255,6 @@ public class RestApi {
         }
 
         public RestApi build() { return new RestApi(this); }
-
     }
 
     public static class Route {
@@ -256,7 +293,6 @@ public class RestApi {
             }
 
             public Route build() { return new Route(this); }
-
         }
     }
 
@@ -333,5 +369,4 @@ public class RestApi {
             super(ErrorResponse.internalServerError(message), message, cause);
         }
     }
-
 }
