@@ -89,6 +89,7 @@ public class RestApi {
             List<ResponseMapperHolder<?>> configuredResponseMappers, ObjectMapper jacksonJsonMapper) {
         List<ResponseMapperHolder<?>> responseMappers = new ArrayList<>(configuredResponseMappers);
         responseMappers.add(new ResponseMapperHolder<>(HttpResponse.class, (entity, context) -> entity));
+        responseMappers.add(new ResponseMapperHolder<>(String.class, (entity, context) -> new MessageResponse(entity)));
         responseMappers.add(new ResponseMapperHolder<>(Slime.class, (entity, context) -> new SlimeJsonResponse(entity)));
         responseMappers.add(new ResponseMapperHolder<>(JsonNode.class, (entity, context) -> new JacksonJsonResponse<>(200, entity, jacksonJsonMapper, true)));
         responseMappers.add(new ResponseMapperHolder<>(JacksonResponseEntity.class, (entity, context) -> new JacksonJsonResponse<>(200, entity, jacksonJsonMapper, true)));
