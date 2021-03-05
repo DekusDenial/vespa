@@ -87,7 +87,7 @@ public class RestApi {
     private static List<ExceptionMapperHolder<?>> combineWithDefaultExceptionMappers(
             List<ExceptionMapperHolder<?>> configuredExceptionMappers) {
         List<ExceptionMapperHolder<?>> exceptionMappers = new ArrayList<>(configuredExceptionMappers);
-        exceptionMappers.add(new ExceptionMapperHolder<>(RestApiException.class, (exception, context) -> exception.createResponse()));
+        exceptionMappers.add(new ExceptionMapperHolder<>(RestApiException.class, (exception, context) -> exception.response));
         return exceptionMappers;
     }
 
@@ -298,41 +298,33 @@ public class RestApi {
 
     public static class RestApiException extends RuntimeException {
         private final int statusCode;
-        private final String errorType;
         private final HttpResponse response;
 
-        public RestApiException(int responseCode, String errorType, String message) {
+        public RestApiException(int statusCode, String errorType, String message) {
             super(message);
-            this.response = null;
-            this.errorType = errorType;
-            this.statusCode = responseCode;
+            this.response = new ErrorResponse(statusCode, errorType, getMessage());
+            this.statusCode = statusCode;
         }
 
         public RestApiException(HttpResponse response, String message) {
             super(message);
             this.response = response;
-            this.errorType = null;
             this.statusCode = response.getStatus();
         }
 
-        public RestApiException(int responseCode, String errorType, String message, Throwable cause) {
+        public RestApiException(int statusCode, String errorType, String message, Throwable cause) {
             super(message, cause);
-            this.response = null;
-            this.errorType = errorType;
-            this.statusCode = responseCode;
+            this.response = new ErrorResponse(statusCode, errorType, getMessage());
+            this.statusCode = statusCode;
         }
 
         public RestApiException(HttpResponse response, String message, Throwable cause) {
             super(message, cause);
             this.response = response;
-            this.errorType = null;
             this.statusCode = response.getStatus();
         }
 
-        private HttpResponse createResponse() {
-            if (response != null) return response;
-            return new ErrorResponse(statusCode, errorType, getMessage());
-        }
+        public int statusCode() { return statusCode; }
     }
 
     public static class NotFoundException extends RestApiException {
