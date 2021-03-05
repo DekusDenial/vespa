@@ -2,10 +2,9 @@
 package com.yahoo.vespa.hosted.athenz.instanceproviderservice.identitydocument;
 
 import com.google.inject.Inject;
-import com.yahoo.container.jdisc.HttpRequest;
-import com.yahoo.container.jdisc.HttpResponse;
 import com.yahoo.container.jdisc.LoggingRequestHandler;
 import com.yahoo.restapi.RestApi;
+import com.yahoo.restapi.RestApiRequestHandler;
 import com.yahoo.vespa.athenz.identityprovider.api.EntityBindingsMapper;
 import com.yahoo.vespa.athenz.identityprovider.api.IdentityType;
 import com.yahoo.vespa.athenz.identityprovider.api.bindings.SignedIdentityDocumentEntity;
@@ -18,31 +17,24 @@ import java.util.logging.Logger;
  *
  * @author bjorncs
  */
-public class IdentityDocumentHandler extends LoggingRequestHandler {
+public class IdentityDocumentHandler extends RestApiRequestHandler<IdentityDocumentHandler> {
 
     private static final Logger log = Logger.getLogger(IdentityDocumentHandler.class.getName());
 
     private final IdentityDocumentGenerator identityDocumentGenerator;
-    private final RestApi restApi;
 
     @Inject
     public IdentityDocumentHandler(LoggingRequestHandler.Context context,
                                    IdentityDocumentGenerator identityDocumentGenerator) {
-        super(context);
-        this.identityDocumentGenerator = identityDocumentGenerator;
-        this.restApi = new RestApi.Builder()
+        super(context, self -> new RestApi.Builder()
                 .addRoute(new RestApi.Route.Builder("/identity-document/node/{host}")
-                        .get(this::getNodeIdentityDocument)
+                        .get(self::getNodeIdentityDocument)
                         .build())
                 .addRoute(new RestApi.Route.Builder("/identity-document/tenant/{host}")
-                        .get(this::getTenantIdentityDocument)
+                        .get(self::getTenantIdentityDocument)
                         .build())
-                .build();
-    }
-
-    @Override
-    public HttpResponse handle(HttpRequest request) {
-        return restApi.handleRequest(request);
+                .build());
+        this.identityDocumentGenerator = identityDocumentGenerator;
     }
 
     private SignedIdentityDocumentEntity getIdentityDocument(String hostname, IdentityType identityType) {
