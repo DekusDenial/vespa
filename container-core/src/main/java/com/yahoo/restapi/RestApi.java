@@ -102,31 +102,52 @@ public class RestApi {
     public interface RequestContext {
         HttpRequest request();
         PathParameters pathParameters();
+        QueryParameters queryParameters();
 
         interface PathParameters {
             Optional<String> getString(String name);
             String getOrThrow(String name);
         }
+
+        interface QueryParameters {
+            Optional<String> getString(String name);
+            String getOrThrow(String name);
+        }
     }
 
-    private static class RequestContextImpl implements RequestContext, RequestContext.PathParameters {
+    private static class RequestContextImpl implements RequestContext {
 
         final HttpRequest request;
         final Path pathMatcher;
+        final PathParameters pathParameters;
+        final QueryParameters queryParameters;
 
         RequestContextImpl(HttpRequest request, Path pathMatcher) {
             this.request = request;
             this.pathMatcher = pathMatcher;
+            this.pathParameters = new PathParametersImpl();
+            this.queryParameters = new QueryParametersImpl();
         }
 
         @Override public HttpRequest request() { return request; }
-        @Override public PathParameters pathParameters() { return this; }
-        @Override public Optional<String> getString(String name) { return Optional.ofNullable(pathMatcher.get(name)); }
-        @Override public String getOrThrow(String name) {
-            return getString(name)
-                    .orElseThrow(() -> new BadRequestException("Path parameter '" + name + "' is missing"));
+        @Override public PathParameters pathParameters() { return pathParameters; }
+        @Override public QueryParameters queryParameters() { return queryParameters; }
+
+        private class PathParametersImpl implements RequestContext.PathParameters {
+            @Override public Optional<String> getString(String name) { return Optional.ofNullable(pathMatcher.get(name)); }
+            @Override public String getOrThrow(String name) {
+                return getString(name)
+                        .orElseThrow(() -> new BadRequestException("Path parameter '" + name + "' is missing"));
+            }
         }
 
+        private class QueryParametersImpl implements RequestContext.QueryParameters {
+            @Override public Optional<String> getString(String name) { return Optional.ofNullable(request.getProperty(name)); }
+            @Override public String getOrThrow(String name) {
+                return getString(name)
+                        .orElseThrow(() -> new BadRequestException("Query parameter '" + name + "' is missing"));
+            }
+        }
     }
 
     private static class ExceptionMapperHolder<EXCEPTION extends RuntimeException> {
