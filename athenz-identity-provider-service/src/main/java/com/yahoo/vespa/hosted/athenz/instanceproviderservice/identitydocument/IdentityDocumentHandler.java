@@ -12,6 +12,8 @@ import com.yahoo.vespa.athenz.identityprovider.api.bindings.SignedIdentityDocume
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import static com.yahoo.restapi.RestApi.route;
+
 /**
  * An API that issues signed identity documents for Vespa nodes.
  *
@@ -26,11 +28,11 @@ public class IdentityDocumentHandler extends RestApiRequestHandler<IdentityDocum
     @Inject
     public IdentityDocumentHandler(LoggingRequestHandler.Context context,
                                    IdentityDocumentGenerator identityDocumentGenerator) {
-        super(context, self -> new RestApi.Builder()
-                .addRoute(new RestApi.Route.Builder("/identity-document/node/{host}")
+        super(context, self -> RestApi.builder()
+                .addRoute(route("/identity-document/node/{host}")
                         .get(self::getNodeIdentityDocument)
                         .build())
-                .addRoute(new RestApi.Route.Builder("/identity-document/tenant/{host}")
+                .addRoute(route("/identity-document/tenant/{host}")
                         .get(self::getTenantIdentityDocument)
                         .build())
                 .build());

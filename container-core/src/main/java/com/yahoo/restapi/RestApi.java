@@ -42,6 +42,9 @@ public class RestApi {
         this.jacksonJsonMapper = jacksonJsonMapper;
     }
 
+    public static Builder builder() { return new Builder(); }
+    public static Route.Builder route(String pathPattern) { return new Route.Builder(pathPattern); }
+
     public HttpResponse handleRequest(HttpRequest request) {
         Path pathMatcher = new Path(request.getUri());
         Route resolvedRoute = resolveRoute(pathMatcher);
@@ -240,6 +243,8 @@ public class RestApi {
         private Route defaultRoute;
         private ObjectMapper jacksonJsonMapper;
 
+        private Builder() {}
+
         public Builder setObjectMapper(ObjectMapper mapper) { this.jacksonJsonMapper = mapper; return this; }
 
         public Builder setDefaultRoute(Route route) { this.defaultRoute = route; return this; }
@@ -277,9 +282,7 @@ public class RestApi {
             private final Map<Method, MethodHandler<?>> handlerPerMethod = new HashMap<>();
             private MethodHandler<?> defaultHandler;
 
-            public Builder(String pathPattern) {
-                this.pathPattern = pathPattern;
-            }
+            private Builder(String pathPattern) { this.pathPattern = pathPattern; }
 
             public Builder get(MethodHandler<?> handler) { return addHandler(Method.GET, handler); }
             public Builder post(MethodHandler<?> handler) { return addHandler(Method.POST, handler); }
