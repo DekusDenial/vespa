@@ -153,6 +153,7 @@ public class RealNodeRepository implements NodeRepository {
         NodeReports reports = NodeReports.fromMap(Optional.ofNullable(node.reports).orElseGet(Map::of));
         return new NodeSpec(
                 node.hostname,
+                Optional.ofNullable(node.openStackId),
                 Optional.ofNullable(node.wantedDockerImage).map(DockerImage::fromString),
                 Optional.ofNullable(node.currentDockerImage).map(DockerImage::fromString),
                 nodeState,
@@ -227,7 +228,7 @@ public class RealNodeRepository implements NodeRepository {
 
     private static NodeRepositoryNode nodeRepositoryNodeFromAddNode(AddNode addNode) {
         NodeRepositoryNode node = new NodeRepositoryNode();
-        node.openStackId = "fake-" + addNode.hostname;
+        node.openStackId = addNode.id.orElse("fake-" + addNode.hostname);
         node.hostname = addNode.hostname;
         node.parentHostname = addNode.parentHostname.orElse(null);
         addNode.nodeFlavor.ifPresent(f -> node.flavor = f);
@@ -252,6 +253,7 @@ public class RealNodeRepository implements NodeRepository {
 
     public static NodeRepositoryNode nodeRepositoryNodeFromNodeAttributes(NodeAttributes nodeAttributes) {
         NodeRepositoryNode node = new NodeRepositoryNode();
+        node.openStackId = nodeAttributes.getHostId().orElse(null);
         node.currentDockerImage = nodeAttributes.getDockerImage().map(DockerImage::asString).orElse(null);
         node.currentRestartGeneration = nodeAttributes.getRestartGeneration().orElse(null);
         node.currentRebootGeneration = nodeAttributes.getRebootGeneration().orElse(null);

@@ -33,6 +33,7 @@ import com.yahoo.restapi.SlimeJsonResponse;
 import com.yahoo.security.KeyUtils;
 import com.yahoo.slime.Cursor;
 import com.yahoo.slime.Inspector;
+import com.yahoo.slime.JsonParseException;
 import com.yahoo.slime.Slime;
 import com.yahoo.slime.SlimeUtils;
 import com.yahoo.vespa.hosted.controller.Controller;
@@ -602,7 +603,17 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
             return ErrorResponse.notFoundError("No secret store '" + name + "' configured for tenant '" + tenantName + "'");
 
         var response = controller.serviceRegistry().configServer().validateSecretStore(deployment.get(), tenantSecretStore.get(), region, parameterName);
-        return new MessageResponse(response);
+        try {
+            var responseRoot = new Slime();
+            var responseCursor = responseRoot.setObject();
+            responseCursor.setString("target", deployment.get().toString());
+            var responseResultCursor = responseCursor.setObject("result");
+            var responseSlime = SlimeUtils.jsonToSlime(response);
+            SlimeUtils.copyObject(responseSlime.get(), responseResultCursor);
+            return new SlimeJsonResponse(responseRoot);
+        } catch (JsonParseException e) {
+            return ErrorResponse.internalServerError(response);
+        }
     }
 
     private Optional<DeploymentId> getActiveDeployment(TenantName tenant) {
@@ -800,6 +811,7 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
         Cursor clustersObject = slime.setObject().setObject("clusters");
         for (Cluster cluster : application.clusters().values()) {
             Cursor clusterObject = clustersObject.setObject(cluster.id().value());
+            clusterObject.setString("type", cluster.type().name());
             toSlime(cluster.min(), clusterObject.setObject("min"));
             toSlime(cluster.max(), clusterObject.setObject("max"));
             toSlime(cluster.current(), clusterObject.setObject("current"));
@@ -810,6 +822,9 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
             utilizationToSlime(cluster.utilization(), clusterObject.setObject("utilization"));
             scalingEventsToSlime(cluster.scalingEvents(), clusterObject.setArray("scalingEvents"));
             clusterObject.setString("autoscalingStatus", cluster.autoscalingStatus());
+            clusterObject.setLong("scalingDuration", cluster.scalingDuration().toMillis());
+            clusterObject.setDouble("maxQueryGrowthRate", cluster.maxQueryGrowthRate());
+            clusterObject.setDouble("currentQueryFractionOfMax", cluster.currentQueryFractionOfMax());
         }
         return new SlimeJsonResponse(slime);
     }
@@ -2058,8 +2073,11 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
 
     private void utilizationToSlime(Cluster.Utilization utilization, Cursor utilizationObject) {
         utilizationObject.setDouble("cpu", utilization.cpu());
+        utilizationObject.setDouble("idealCpu", utilization.idealCpu());
         utilizationObject.setDouble("memory", utilization.memory());
+        utilizationObject.setDouble("idealMemory", utilization.idealMemory());
         utilizationObject.setDouble("disk", utilization.disk());
+        utilizationObject.setDouble("idealDisk", utilization.idealDisk());
     }
 
     private void scalingEventsToSlime(List<Cluster.ScalingEvent> scalingEvents, Cursor scalingEventsArray) {

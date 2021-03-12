@@ -7,18 +7,17 @@ import com.yahoo.vdslib.state.Node;
 import com.yahoo.vdslib.state.NodeState;
 import com.yahoo.vdslib.state.NodeType;
 import com.yahoo.vdslib.state.State;
-import com.yahoo.vespa.jdk8compat.Set;
 import org.junit.Test;
 
 import java.util.Optional;
+import java.util.Set;
 
-import static com.yahoo.vespa.clustercontroller.core.matchers.HasStateReasonForNode.hasStateReasonForNode;
-import static com.yahoo.vespa.clustercontroller.core.ClusterFixture.storageNode;
 import static com.yahoo.vespa.clustercontroller.core.ClusterFixture.distributorNode;
-
+import static com.yahoo.vespa.clustercontroller.core.ClusterFixture.storageNode;
+import static com.yahoo.vespa.clustercontroller.core.matchers.HasStateReasonForNode.hasStateReasonForNode;
 import static org.hamcrest.CoreMatchers.not;
-import static org.hamcrest.core.IsEqual.equalTo;
 import static org.hamcrest.core.Is.is;
+import static org.hamcrest.core.IsEqual.equalTo;
 import static org.junit.Assert.assertThat;
 
 public class ClusterStateGeneratorTest {
@@ -71,20 +70,6 @@ public class ClusterStateGeneratorTest {
         final AnnotatedClusterState state = generateFromFixtureWithDefaultParams(fixture);
 
         assertThat(state.toString(), equalTo("distributor:9 storage:9 .0.s:d .4.s:s"));
-    }
-
-    @Test
-    public void storage_reported_disk_state_included_in_generated_state() {
-        final NodeState stateWithDisks = new NodeState(NodeType.STORAGE, State.UP);
-        stateWithDisks.setDiskCount(7);
-        stateWithDisks.setDiskState(5, new DiskState(State.DOWN));
-
-        final ClusterFixture fixture = ClusterFixture.forFlatCluster(9)
-                .bringEntireClusterUp()
-                .reportStorageNodeState(2, stateWithDisks);
-        final AnnotatedClusterState state = generateFromFixtureWithDefaultParams(fixture);
-
-        assertThat(state.toString(), equalTo("distributor:9 storage:9 .2.d:7 .2.d.5.s:d"));
     }
 
     @Test
@@ -170,7 +155,7 @@ public class ClusterStateGeneratorTest {
     @Test
     public void storage_node_in_init_mode_while_listing_buckets_is_marked_down() {
         final NodeState initWhileListingBuckets = new NodeState(NodeType.STORAGE, State.INITIALIZING);
-        initWhileListingBuckets.setInitProgress(0.0);
+        initWhileListingBuckets.setInitProgress(0.0f);
 
         final ClusterFixture fixture = ClusterFixture.forFlatCluster(3)
                 .bringEntireClusterUp()
@@ -187,7 +172,7 @@ public class ClusterStateGeneratorTest {
     @Test
     public void implicit_down_while_listing_buckets_does_not_override_wanted_state() {
         final NodeState initWhileListingBuckets = new NodeState(NodeType.STORAGE, State.INITIALIZING);
-        initWhileListingBuckets.setInitProgress(0.0);
+        initWhileListingBuckets.setInitProgress(0.0f);
 
         final ClusterFixture fixture = ClusterFixture.forFlatCluster(3)
                 .bringEntireClusterUp()
@@ -201,7 +186,7 @@ public class ClusterStateGeneratorTest {
     @Test
     public void distributor_nodes_in_init_mode_are_not_mapped_to_down() {
         final NodeState initWhileListingBuckets = new NodeState(NodeType.DISTRIBUTOR, State.INITIALIZING);
-        initWhileListingBuckets.setInitProgress(0.0);
+        initWhileListingBuckets.setInitProgress(0.0f);
 
         final ClusterFixture fixture = ClusterFixture.forFlatCluster(3)
                 .bringEntireClusterUp()
@@ -243,33 +228,6 @@ public class ClusterStateGeneratorTest {
         // as these are omitted by default.
         assertThat(state.toString(true), equalTo("distributor:7 storage:7 .1.s:m .1.m:foo " +
                 ".2.s:d .2.m:bar .3.s:r .3.m:baz"));
-    }
-
-    @Test
-    public void reported_disk_state_not_hidden_by_wanted_state() {
-        final NodeState stateWithDisks = new NodeState(NodeType.STORAGE, State.UP);
-        stateWithDisks.setDiskCount(5);
-        stateWithDisks.setDiskState(3, new DiskState(State.DOWN));
-
-        final ClusterFixture fixture = ClusterFixture.forFlatCluster(9)
-                .bringEntireClusterUp()
-                .reportStorageNodeState(2, stateWithDisks)
-                .proposeStorageNodeWantedState(2, State.RETIRED)
-                .reportStorageNodeState(3, stateWithDisks)
-                .proposeStorageNodeWantedState(3, State.MAINTENANCE);
-        final AnnotatedClusterState state = generateFromFixtureWithDefaultParams(fixture);
-
-        // We do not publish disk states for nodes in Down state. This differs from how the
-        // legacy controller did things, but such states cannot be counted on for ideal state
-        // calculations either way. In particular, reported disk states are not persisted and
-        // only exist transiently in the cluster controller's memory. A controller restart is
-        // sufficient to clear all disk states that have been incidentally remembered for now
-        // downed nodes.
-        // The keen reader may choose to convince themselves of this independently by reading the
-        // code in com.yahoo.vdslib.distribution.Distribution#getIdealStorageNodes and observing
-        // how disk states for nodes that are in a down-state are never considered.
-        assertThat(state.toString(), equalTo("distributor:9 storage:9 .2.s:r .2.d:5 .2.d.3.s:d " +
-                ".3.s:m .3.d:5 .3.d.3.s:d"));
     }
 
     @Test
@@ -822,7 +780,7 @@ public class ClusterStateGeneratorTest {
     private String do_test_storage_node_with_no_init_progress(State wantedState) {
         final ClusterFixture fixture = ClusterFixture.forFlatCluster(3)
                 .bringEntireClusterUp()
-                .reportStorageNodeState(0, new NodeState(NodeType.STORAGE, State.INITIALIZING).setInitProgress(0.5))
+                .reportStorageNodeState(0, new NodeState(NodeType.STORAGE, State.INITIALIZING).setInitProgress(0.5f))
                 .proposeStorageNodeWantedState(0, wantedState);
 
         final NodeInfo nodeInfo = fixture.cluster.getNodeInfo(new Node(NodeType.STORAGE, 0));
@@ -864,7 +822,7 @@ public class ClusterStateGeneratorTest {
                 .bringEntireClusterUp()
                 .reportStorageNodeState(0, State.INITIALIZING)
                 .reportStorageNodeState(0, State.DOWN) // Init -> Down triggers unstable init flag
-                .reportStorageNodeState(0, new NodeState(NodeType.STORAGE, State.INITIALIZING).setInitProgress(0.5));
+                .reportStorageNodeState(0, new NodeState(NodeType.STORAGE, State.INITIALIZING).setInitProgress(0.5f));
 
         final AnnotatedClusterState state = generateFromFixtureWithDefaultParams(fixture);
         assertThat(state.toString(), equalTo("distributor:5 storage:5 .0.s:d"));
@@ -874,7 +832,7 @@ public class ClusterStateGeneratorTest {
     public void storage_node_with_crashes_but_not_unstable_init_does_not_have_init_state_substituted_by_down() {
         final ClusterFixture fixture = ClusterFixture.forFlatCluster(5)
                 .bringEntireClusterUp()
-                .reportStorageNodeState(0, new NodeState(NodeType.STORAGE, State.INITIALIZING).setInitProgress(0.5));
+                .reportStorageNodeState(0, new NodeState(NodeType.STORAGE, State.INITIALIZING).setInitProgress(0.5f));
         final NodeInfo nodeInfo = fixture.cluster.getNodeInfo(new Node(NodeType.STORAGE, 0));
         nodeInfo.setPrematureCrashCount(5);
 
@@ -927,7 +885,7 @@ public class ClusterStateGeneratorTest {
     public void configured_zero_init_progress_time_disables_auto_init_to_down_feature() {
         final ClusterFixture fixture = ClusterFixture.forFlatCluster(3)
                 .bringEntireClusterUp()
-                .reportStorageNodeState(0, new NodeState(NodeType.STORAGE, State.INITIALIZING).setInitProgress(0.5));
+                .reportStorageNodeState(0, new NodeState(NodeType.STORAGE, State.INITIALIZING).setInitProgress(0.5f));
 
         final NodeInfo nodeInfo = fixture.cluster.getNodeInfo(new Node(NodeType.STORAGE, 0));
         nodeInfo.setInitProgressTime(10_000);

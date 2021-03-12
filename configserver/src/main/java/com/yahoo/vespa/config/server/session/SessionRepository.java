@@ -257,8 +257,6 @@ public class SessionRepository {
         session.setDockerImageRepository(existingSession.getDockerImageRepository());
         session.setAthenzDomain(existingSession.getAthenzDomain());
         session.setTenantSecretStores(existingSession.getTenantSecretStores());
-        if (existingSession.getDedicatedClusterControllerCluster())
-            session.setDedicatedClusterControllerCluster();
         return session;
     }
 
@@ -417,19 +415,6 @@ public class SessionRepository {
         log.log(Level.FINE, () -> session.logPre() + "Notifying " + waiter);
         notifyCompletion(waiter, session);
         log.log(Level.INFO, session.logPre() + "Session activated: " + sessionId);
-    }
-
-    public void delete(Session remoteSession) {
-        long sessionId = remoteSession.getSessionId();
-        log.log(Level.FINE, () -> remoteSession.logPre() + "Deactivating and deleting remote session " + sessionId);
-        createSetStatusTransaction(remoteSession, Session.Status.DELETE).commit();
-        deleteRemoteSessionFromZooKeeper(remoteSession);
-        remoteSessionCache.remove(sessionId);
-        LocalSession localSession = getLocalSession(sessionId);
-        if (localSession != null) {
-            log.log(Level.FINE, () -> localSession.logPre() + "Deleting local session " + sessionId);
-            deleteLocalSession(localSession);
-        }
     }
 
     private Optional<RemoteSession> loadSessionIfActive(RemoteSession session) {
@@ -635,7 +620,7 @@ public class SessionRepository {
             sessionZKClient.createNewSession(clock.instant());
             Curator.CompletionWaiter waiter = sessionZKClient.getUploadWaiter();
             LocalSession session = new LocalSession(tenantName, sessionId, app, sessionZKClient);
-            waiter.awaitCompletion(timeoutBudget.timeLeft());
+            waiter.awaitCompletion(Duration.ofSeconds(Math.min(60, timeoutBudget.timeLeft().getSeconds())));
             addLocalSession(session);
             return session;
         } catch (Exception e) {

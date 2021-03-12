@@ -81,7 +81,6 @@ public class ApplicationCuratorDatabase {
 
             curator.create(applicationPath(id));
             modifyReindexing(id, ApplicationReindexing.empty(), UnaryOperator.identity());
-            setDedicatedClusterControllerCluster(id);
         }
     }
 
@@ -111,14 +110,6 @@ public class ApplicationCuratorDatabase {
         return (data.isEmpty() || data.get().length == 0)
                ? Optional.empty()
                : data.map(bytes -> Long.parseLong(Utf8.toString(bytes)));
-    }
-
-    public boolean getDedicatedClusterControllerCluster(ApplicationId id) {
-        return curator.exists(dedicatedClusterControllerClusterPath(id));
-    }
-
-    public void setDedicatedClusterControllerCluster(ApplicationId id) {
-        curator.create(dedicatedClusterControllerClusterPath(id));
     }
 
     /**
